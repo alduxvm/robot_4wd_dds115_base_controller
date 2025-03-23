@@ -1,0 +1,7 @@
+<launch>
+  <!-- Load parameters -->
+  <rosparam file="$(find robot_4wd_dds115_base_controller)/config/base_controller.yaml" command="load" />
+
+  <!-- Launch the base controller node -->
+  <node pkg="robot_4wd_dds115_base_controller" type="base_controller_node.py" name="base_controller" output="screen" />
+</launch>
