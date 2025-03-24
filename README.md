@@ -1,8 +1,10 @@
 ![Altax](https://altax.net/images/altax.png "Altax")
 
-# Robot 4wd dds115 base controller
+# Robot 4wd DDSM115 base controller
 
 This repository contains the Rover Base Controller, a ROS package for controlling a 4WD mobile robot equipped with DDSM115 motors. The package provides velocity control via /cmd_vel, reads motor feedback for RPM and current, and publishes odometry for localization.
+
+![Rover with DDSM115 wheel motors](images/rover.jpeg)
 
 ## Features
 
@@ -11,6 +13,13 @@ This repository contains the Rover Base Controller, a ROS package for controllin
 - **Odometry Computation**: Integrates wheel speeds to estimate the robot's position and publishes it on `/wheel_odom`.
 - **ROS Compatibility**: Designed for **ROS Noetic** on **Ubuntu 20.04**, compatible with `teleop_twist_keyboard` for manual control.
 - **Configurable Parameters**: Supports YAML-based configuration for motor IDs, wheel directions, robot dimensions, and control loop frequency.
+
+![DDSM115 in action](images/ddsm115.gif)
+
+### DDSM115 library
+
+Python library to talk with the DDSM115 coming from this repo with some modifications: 
+[ros_ddsm115_driver](https://github.com/belovictor/ros_ddsm115_driver)
 
 ## Installation & Usage
 
@@ -50,8 +59,8 @@ base_controller:
   wheel_ids: [1, 2, 3, 4]
   wheel_directions: ["forward", "backward", "forward", "backward"]
   wheel_radius: 0.1        # meters
-  wheel_track: 0.5         # meters (distance between left & right wheels)
-  wheel_base: 0.6          # meters (distance between front & rear wheels)
+  wheel_track: 0.33         # meters (distance between left & right wheels)
+  wheel_base: 0.33          # meters (distance between front & rear wheels)
   feedback_rate: 100       # Hz
   device_path: "/dev/ttyUSB0"
 ```
