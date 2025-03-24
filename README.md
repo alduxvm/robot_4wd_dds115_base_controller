@@ -26,7 +26,7 @@ Python library to talk with the DDSM115 coming from this repo with some modifica
 ### 1. Clone into Catkin Workspace
 ```bash
 cd ~/catkin_ws/src
-git clone <your-repo-url> rover_base_controller
+git clone https://github.com/alduxvm/robot_4wd_dds115_base_controller
 cd ~/catkin_ws
 catkin_make
 source devel/setup.bash
@@ -34,7 +34,7 @@ source devel/setup.bash
 
 ### 2. Launch the Base Controller
 ```bash
-roslaunch rover_base_controller base_controller.launch
+roslaunch robot_4wd_dds115_base_controller base_controller.launch 
 ```
 
 ### 3. Control the Robot via Teleop
