@@ -44,9 +44,9 @@ rosrun teleop_twist_keyboard teleop_twist_keyboard.py
 
 ### 4. Monitor Motor Feedback & Odometry
 ```bash
-rostopic echo /odom
-rostopic echo /motor_rpms
-rostopic echo /motor_currents
+rostopic echo /wheel_odom
+rostopic echo /ddsm115_rpms
+rostopic echo /ddsm115_currents
 ```
 
 ## Configuration
