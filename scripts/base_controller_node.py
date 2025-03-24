@@ -28,50 +28,78 @@ class BaseController:
         self.wheel_directions = rospy.get_param("~wheel_directions", 
             ["forward", "backward", "forward", "backward"])
         self.wheel_radius = rospy.get_param("~wheel_radius", 0.1)      # in meters
-        self.wheel_track = rospy.get_param("~wheel_track", 0.33)        # distance between left & right wheels
-        self.wheel_base = rospy.get_param("~wheel_base", 0.33)         # distance between front & rear wheels
-        self.feedback_rate = rospy.get_param("~feedback_rate", 100)    # in Hz
+        self.wheel_track = rospy.get_param("~wheel_track", 0.5)        # meters (distance between left & right wheels)
+        self.wheel_base = rospy.get_param("~wheel_base", 0.6)          # meters (distance between front & rear wheels)
+        self.feedback_rate = rospy.get_param("~feedback_rate", 100)    # Hz
 
-        # Instantiate the motor control object from ddsm115
+        # New parameters for slight turning behavior.
+        self.slight_turn_threshold = rospy.get_param("~slight_turn_threshold", 0.1)  # rad/s threshold for slight turn
+        self.inside_reduction_factor = rospy.get_param("~inside_reduction_factor", 0.3)  # fraction to reduce inside wheel speed
+
+        # Instantiate the motor control object from ddsm115.
         self.motor_control = ddsm115.MotorControl()
 
-        # Set all motors to drive mode 2
+        # Set all motors to drive mode 2.
         for motor_id in self.wheel_ids:
             self.motor_control.set_drive_mode(motor_id, 2)
 
-        # Initialize odometry state
+        # Initialize odometry state.
         self.x = 0.0
         self.y = 0.0
         self.theta = 0.0
         self.last_time = rospy.Time.now()
 
-        # Publishers for odometry, motor RPMs and motor currents, and TF broadcaster
-        self.odom_pub = rospy.Publisher("wheel_odom", Odometry, queue_size=10)
+        # Publishers for odometry, motor RPMs, and motor currents, and TF broadcaster.
+        self.odom_pub = rospy.Publisher("odom", Odometry, queue_size=10)
         self.odom_broadcaster = tf.TransformBroadcaster()
-        self.motor_rpm_pub = rospy.Publisher("ddsm115_rpms", Float32MultiArray, queue_size=10)
-        self.motor_current_pub = rospy.Publisher("ddsm115_currents", Float32MultiArray, queue_size=10)
+        self.motor_rpm_pub = rospy.Publisher("motor_rpms", Float32MultiArray, queue_size=10)
+        self.motor_current_pub = rospy.Publisher("motor_currents", Float32MultiArray, queue_size=10)
 
-        # Subscriber for /cmd_vel commands
+        # Subscriber for /cmd_vel commands.
         self.cmd_vel_sub = rospy.Subscriber("cmd_vel", Twist, self.cmd_vel_callback)
 
-        # Timer for the feedback loop
+        # Timer for the feedback loop.
         self.timer = rospy.Timer(rospy.Duration(1.0 / self.feedback_rate), self.update)
 
     def cmd_vel_callback(self, msg):
         """
         Converts incoming /cmd_vel commands into motor RPM commands.
-        Uses differential drive kinematics:
-            left_vel  = v - (w * L/2)
-            right_vel = v + (w * L/2)
-        Then converts linear velocities (m/s) into RPM:
-            rpm = (linear_velocity * 60) / (2 * pi * wheel_radius)
+
+        For slight turns (angular velocity below slight_turn_threshold), instead of applying
+        full differential drive offsets, the inside wheels are commanded at a reduced speed
+        relative to the current forward speed.
+
+        For larger rotations, the standard differential drive kinematics are used:
+            left_vel  = v - (w * wheel_track/2)
+            right_vel = v + (w * wheel_track/2)
+        
+        Linear velocities (m/s) are then converted to RPM.
         """
         v = msg.linear.x
         w = msg.angular.z
 
-        left_vel = v - (w * self.wheel_track / 2.0)
-        right_vel = v + (w * self.wheel_track / 2.0)
         conversion_factor = 60.0 / (2 * math.pi * self.wheel_radius)
+
+        # Check if this is a slight turn.
+        if abs(w) < self.slight_turn_threshold:
+            # For a slight turn, reduce the speed of the inside wheels.
+            if w > 0:
+                # Turning left: left wheels are inside.
+                left_vel = v * (1 - self.inside_reduction_factor)
+                right_vel = v
+            elif w < 0:
+                # Turning right: right wheels are inside.
+                left_vel = v
+                right_vel = v * (1 - self.inside_reduction_factor)
+            else:
+                left_vel = v
+                right_vel = v
+        else:
+            # Standard differential drive for larger rotations.
+            left_vel = v - (w * self.wheel_track / 2.0)
+            right_vel = v + (w * self.wheel_track / 2.0)
+
+        # Convert linear velocities to RPM.
         left_rpm = left_vel * conversion_factor
         right_rpm = right_vel * conversion_factor
 
@@ -113,11 +141,11 @@ class BaseController:
 
             motor_rpms.append(rpm)
             motor_currents.append(current)
-            # Convert rpm to linear velocity (m/s): v = rpm * (2*pi*radius) / 60
-            v = rpm * (2 * math.pi * self.wheel_radius) / 60.0
-            wheel_velocities.append(v)
+            # Convert rpm to linear velocity (m/s): v = rpm * (2*pi*radius) / 60.
+            v_conv = rpm * (2 * math.pi * self.wheel_radius) / 60.0
+            wheel_velocities.append(v_conv)
 
-        # For odometry, assume wheels 0 and 2 are left, 1 and 3 are right.
+        # For odometry, assume wheels 0 and 2 are on the left, and wheels 1 and 3 are on the right.
         v_left = (wheel_velocities[0] + wheel_velocities[2]) / 2.0
         v_right = (wheel_velocities[1] + wheel_velocities[3]) / 2.0
 
@@ -132,7 +160,7 @@ class BaseController:
         # Publish the odometry message.
         odom = Odometry()
         odom.header.stamp = current_time
-        odom.header.frame_id = "wheel_odom"
+        odom.header.frame_id = "odom"
         odom.pose.pose.position.x = self.x
         odom.pose.pose.position.y = self.y
         odom.pose.pose.position.z = 0.0
@@ -147,7 +175,7 @@ class BaseController:
             q,
             current_time,
             "base_link",
-            "wheel_odom"
+            "odom"
         )
 
         # Publish motor RPM and current topics.
