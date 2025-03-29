@@ -5,5 +5,5 @@ base_controller:
   wheel_radius: 0.1        # in meters
   wheel_track: 0.33   # Distance between left & right wheels (meters)
   wheel_base: 0.33    # Distance between front & rear wheels (meters)
-  feedback_rate: 100       # in Hz
+  feedback_rate: 10       # in Hz
   device_path: "/dev/ttyUSB0"
