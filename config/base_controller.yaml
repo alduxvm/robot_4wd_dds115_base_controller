@@ -2,7 +2,7 @@ base_controller:
   wheel_names: ["front_left_wheel", "front_right_wheel", "rear_left_wheel", "rear_right_wheel"]
   wheel_ids: [1, 2, 3, 4]
   wheel_directions: ["forward", "backward", "forward", "backward"]
-  wheel_radius: 0.1        # in meters
+  wheel_radius: 0.05        # in meters
   wheel_track: 0.33   # Distance between left & right wheels (meters)
   wheel_base: 0.33    # Distance between front & rear wheels (meters)
   feedback_rate: 10       # in Hz
