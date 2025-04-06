@@ -50,7 +50,7 @@ class BaseController:
         self.last_time = rospy.Time.now()
 
         # Publishers for odometry, motor RPMs, and motor currents, and TF broadcaster.
-        self.odom_pub = rospy.Publisher("odom", Odometry, queue_size=10)
+        self.odom_pub = rospy.Publisher("wheel_odom", Odometry, queue_size=10)
         self.odom_broadcaster = tf.TransformBroadcaster()
         self.motor_rpm_pub = rospy.Publisher("motor_rpms", Float32MultiArray, queue_size=10)
         self.motor_current_pub = rospy.Publisher("motor_currents", Float32MultiArray, queue_size=10)
