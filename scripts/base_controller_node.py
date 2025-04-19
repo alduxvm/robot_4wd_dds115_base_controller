@@ -162,7 +162,7 @@ class BaseController:
         self.odom_broadcaster.sendTransform(
             (self.x, self.y, 0),
             q,
-            current_time,
+            rospy.Time.now() + rospy.Duration(0.0001),  # 100μs offset to avoid duplicate,
             "base_link",
             "odom"
         )
