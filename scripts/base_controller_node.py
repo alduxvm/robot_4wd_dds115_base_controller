@@ -62,55 +62,31 @@ class BaseController:
         self.timer = rospy.Timer(rospy.Duration(1.0 / self.feedback_rate), self.update)
 
     def cmd_vel_callback(self, msg):
-        """
-        Converts incoming /cmd_vel commands into motor RPM commands.
-
-        For slight turns (angular velocity below slight_turn_threshold), instead of applying
-        full differential drive offsets, the inside wheels are commanded at a reduced speed
-        relative to the current forward speed.
-
-        For larger rotations, the standard differential drive kinematics are used:
-            left_vel  = v - (w * wheel_track/2)
-            right_vel = v + (w * wheel_track/2)
-        
-        Linear velocities (m/s) are then converted to RPM.
-        """
         v = msg.linear.x
         w = msg.angular.z
-
         conversion_factor = 60.0 / (2 * math.pi * self.wheel_radius)
 
-        # Check if this is a slight turn.
         if abs(w) < self.slight_turn_threshold:
-            # For a slight turn, reduce the speed of the inside wheels.
             if w > 0:
-                # Turning left: left wheels are inside.
                 left_vel = v * (1 - self.inside_reduction_factor)
                 right_vel = v
             elif w < 0:
-                # Turning right: right wheels are inside.
                 left_vel = v
                 right_vel = v * (1 - self.inside_reduction_factor)
             else:
                 left_vel = v
                 right_vel = v
         else:
-            # Standard differential drive for larger rotations.
             left_vel = v - (w * self.wheel_track / 2.0)
             right_vel = v + (w * self.wheel_track / 2.0)
 
-        # Convert linear velocities to RPM.
         left_rpm = left_vel * conversion_factor
         right_rpm = right_vel * conversion_factor
 
-        # Command each motor with the appropriate RPM.
         for i, motor_id in enumerate(self.wheel_ids):
             rpm = left_rpm if i in [0, 2] else right_rpm
-
-            # Adjust for wheel direction.
             if self.wheel_directions[i] == "backward":
                 rpm = -rpm
-
             try:
                 self.motor_control.send_rpm(motor_id, rpm)
             except Exception as e:
@@ -125,7 +101,6 @@ class BaseController:
         motor_rpms = []
         motor_currents = []
 
-        # Read feedback for each motor.
         for i, motor_id in enumerate(self.wheel_ids):
             try:
                 feedback = self.motor_control.get_motor_feedback(motor_id)
@@ -135,29 +110,24 @@ class BaseController:
                 rospy.logwarn("Error reading feedback for motor {}: {}".format(motor_id, e))
                 rpm, current = 0, 0
 
-            # Adjust RPM based on wheel direction.
             if self.wheel_directions[i] == "backward":
                 rpm = -rpm
 
             motor_rpms.append(rpm)
             motor_currents.append(current)
-            # Convert rpm to linear velocity (m/s): v = rpm * (2*pi*radius) / 60.
             v_conv = rpm * (2 * math.pi * self.wheel_radius) / 60.0
             wheel_velocities.append(v_conv)
 
-        # For odometry, assume wheels 0 and 2 are on the left, and wheels 1 and 3 are on the right.
         v_left = (wheel_velocities[0] + wheel_velocities[2]) / 2.0
         v_right = (wheel_velocities[1] + wheel_velocities[3]) / 2.0
 
         linear_velocity = (v_left + v_right) / 2.0
         angular_velocity = (v_right - v_left) / self.wheel_track
 
-        # Update the robot's pose (simple Euler integration).
         self.x += linear_velocity * math.cos(self.theta) * dt
         self.y += linear_velocity * math.sin(self.theta) * dt
         self.theta += angular_velocity * dt
 
-        # Publish the odometry message.
         odom = Odometry()
         odom.header.stamp = current_time
         odom.header.frame_id = "odom"
@@ -169,6 +139,25 @@ class BaseController:
         odom.child_frame_id = "base_link"
         odom.twist.twist.linear.x = linear_velocity
         odom.twist.twist.angular.z = angular_velocity
+
+        # ✅ Add covariance values
+        odom.pose.covariance = [
+            0.01, 0,    0,    0,    0,    0,
+            0,    0.01, 0,    0,    0,    0,
+            0,    0,    999,  0,    0,    0,
+            0,    0,    0,    999,  0,    0,
+            0,    0,    0,    0,    999,  0,
+            0,    0,    0,    0,    0,    0.05
+        ]
+        odom.twist.covariance = [
+            0.01, 0,    0,    0,    0,    0,
+            0,    0.01, 0,    0,    0,    0,
+            0,    0,    999,  0,    0,    0,
+            0,    0,    0,    999,  0,    0,
+            0,    0,    0,    0,    999,  0,
+            0,    0,    0,    0,    0,    0.05
+        ]
+
         self.odom_pub.publish(odom)
         self.odom_broadcaster.sendTransform(
             (self.x, self.y, 0),
@@ -178,7 +167,6 @@ class BaseController:
             "odom"
         )
 
-        # Publish motor RPM and current topics.
         rpm_msg = Float32MultiArray()
         rpm_msg.data = motor_rpms
         self.motor_rpm_pub.publish(rpm_msg)
