@@ -6,4 +6,4 @@ base_controller:
   wheel_track: 0.33   # Distance between left & right wheels (meters)
   wheel_base: 0.33    # Distance between front & rear wheels (meters)
   feedback_rate: 10       # in Hz
-  device_path: "/dev/ttyUSB0"
+  device_path: "/dev/rs485" # Requires the udev modification 
