@@ -36,7 +36,7 @@ class BaseController:
         self.slight_turn_threshold = rospy.get_param("~slight_turn_threshold", 0.1)  # rad/s threshold for slight turn
         self.inside_reduction_factor = rospy.get_param("~inside_reduction_factor", 0.3)  # fraction to reduce inside wheel speed
         self.device_path = rospy.get_param("~device_path", "/dev/rs485")
-        self.cmd_vel_timeout = rospy.get_param("~cmd_vel_timeout", 0.5)  # seconds
+        self.cmd_vel_timeout = rospy.get_param("~cmd_vel_timeout", 0.0)  # seconds, 0 = disabled
 
         # Instantiate the motor control object from ddsm115.
         self.motor_control = ddsm115.MotorControl(self.device_path)
@@ -101,8 +101,8 @@ class BaseController:
         dt = (current_time - self.last_time).to_sec()
         self.last_time = current_time
 
-        # Watchdog: stop motors if no cmd_vel received recently
-        if (current_time - self.last_cmd_time).to_sec() > self.cmd_vel_timeout:
+        # Watchdog: stop motors if no cmd_vel received recently (disabled when timeout=0)
+        if self.cmd_vel_timeout > 0 and (current_time - self.last_cmd_time).to_sec() > self.cmd_vel_timeout:
             for motor_id in self.wheel_ids:
                 try:
                     self.motor_control.send_rpm(motor_id, 0)
