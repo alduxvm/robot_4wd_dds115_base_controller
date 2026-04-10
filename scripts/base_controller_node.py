@@ -35,9 +35,11 @@ class BaseController:
         # New parameters for slight turning behavior.
         self.slight_turn_threshold = rospy.get_param("~slight_turn_threshold", 0.1)  # rad/s threshold for slight turn
         self.inside_reduction_factor = rospy.get_param("~inside_reduction_factor", 0.3)  # fraction to reduce inside wheel speed
+        self.device_path = rospy.get_param("~device_path", "/dev/rs485")
+        self.cmd_vel_timeout = rospy.get_param("~cmd_vel_timeout", 0.5)  # seconds
 
         # Instantiate the motor control object from ddsm115.
-        self.motor_control = ddsm115.MotorControl()
+        self.motor_control = ddsm115.MotorControl(self.device_path)
 
         # Set all motors to drive mode 2.
         for motor_id in self.wheel_ids:
@@ -48,6 +50,7 @@ class BaseController:
         self.y = 0.0
         self.theta = 0.0
         self.last_time = rospy.Time.now()
+        self.last_cmd_time = rospy.Time.now()
 
         # Publishers for odometry, motor RPMs, and motor currents, and TF broadcaster.
         self.odom_pub = rospy.Publisher("wheel_odom", Odometry, queue_size=10)
@@ -62,6 +65,7 @@ class BaseController:
         self.timer = rospy.Timer(rospy.Duration(1.0 / self.feedback_rate), self.update)
 
     def cmd_vel_callback(self, msg):
+        self.last_cmd_time = rospy.Time.now()
         v = msg.linear.x
         w = msg.angular.z
         conversion_factor = 60.0 / (2 * math.pi * self.wheel_radius)
@@ -96,6 +100,14 @@ class BaseController:
         current_time = rospy.Time.now()
         dt = (current_time - self.last_time).to_sec()
         self.last_time = current_time
+
+        # Watchdog: stop motors if no cmd_vel received recently
+        if (current_time - self.last_cmd_time).to_sec() > self.cmd_vel_timeout:
+            for motor_id in self.wheel_ids:
+                try:
+                    self.motor_control.send_rpm(motor_id, 0)
+                except Exception as e:
+                    rospy.logwarn("Watchdog: error stopping motor {}: {}".format(motor_id, e))
 
         wheel_velocities = []
         motor_rpms = []
