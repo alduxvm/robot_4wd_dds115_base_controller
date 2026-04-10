@@ -7,4 +7,4 @@ base_controller:
   device_path:      "/dev/rs485"
   feedback_rate_hz: 10.0     # Hz
   cmd_vel_timeout:  1.0      # seconds; 0 = disabled
-  inter_cmd_gap_ms: 2        # ms between motor commands (RS485 turnaround)
+  inter_cmd_gap_ms: 4        # ms between motor commands (RS485 turnaround, needs > 2.2ms)

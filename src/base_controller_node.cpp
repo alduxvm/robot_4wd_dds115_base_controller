@@ -18,6 +18,9 @@
 #include <tf/transform_broadcaster.h>
 
 #include <serial/serial.h>
+#include <linux/serial.h>
+#include <sys/ioctl.h>
+#include <fcntl.h>
 
 #include <atomic>
 #include <chrono>
@@ -29,6 +32,38 @@
 #include <vector>
 
 #include "robot_4wd_dds115_base_controller/ddsm115_protocol.hpp"
+
+// Find the file descriptor that serial::Serial opened for a given device path
+static int getFdForDevice(const std::string& port)
+{
+    char path[64], link[256];
+    for (int fd = 3; fd < 256; fd++) {
+        snprintf(path, sizeof(path), "/proc/self/fd/%d", fd);
+        ssize_t len = readlink(path, link, sizeof(link) - 1);
+        if (len > 0 && port == std::string(link, static_cast<size_t>(len)))
+            return fd;
+    }
+    return -1;
+}
+
+static void enableRS485Mode(const std::string& port)
+{
+    int fd = getFdForDevice(port);
+    if (fd < 0) {
+        ROS_WARN("RS485: could not find fd for %s — skipping", port.c_str());
+        return;
+    }
+    struct serial_rs485 rs485;
+    memset(&rs485, 0, sizeof(rs485));
+    rs485.flags             = SER_RS485_ENABLED | SER_RS485_RTS_ON_SEND;
+    rs485.delay_rts_before_send = 0;
+    rs485.delay_rts_after_send  = 0;
+    if (ioctl(fd, TIOCSRS485, &rs485) < 0)
+        ROS_WARN("Could not set RS485 mode (adapter may handle it in hardware): %s",
+                 strerror(errno));
+    else
+        ROS_INFO("RS485 kernel mode enabled on fd %d", fd);
+}
 
 class BaseControllerNode
 {
@@ -62,6 +97,9 @@ public:
             return;
         }
         ROS_INFO("Opened serial port: %s", device.c_str());
+
+        // ── Enable kernel RS485 mode (RTS controls TX/RX direction) ──────────
+        enableRS485Mode(device);
 
         // ── Set all motors to velocity mode ──────────────────────────────────
         for (int id : wheel_ids_) {
