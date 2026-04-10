@@ -33,14 +33,29 @@
 
 #include "robot_4wd_dds115_base_controller/ddsm115_protocol.hpp"
 
+// Resolve symlinks to canonical path (e.g. /dev/rs485 -> /dev/ttyUSB0)
+static std::string canonicalPath(const std::string& path)
+{
+    char resolved[256] = {};
+    // First: resolve the device symlink itself
+    ssize_t len = readlink(path.c_str(), resolved, sizeof(resolved) - 1);
+    if (len > 0) {
+        std::string r(resolved, static_cast<size_t>(len));
+        if (r[0] != '/') r = "/dev/" + r;  // relative symlink → absolute
+        return r;
+    }
+    return path;  // not a symlink, use as-is
+}
+
 // Find the file descriptor that serial::Serial opened for a given device path
 static int getFdForDevice(const std::string& port)
 {
+    std::string target = canonicalPath(port);
     char path[64], link[256];
     for (int fd = 3; fd < 256; fd++) {
         snprintf(path, sizeof(path), "/proc/self/fd/%d", fd);
         ssize_t len = readlink(path, link, sizeof(link) - 1);
-        if (len > 0 && port == std::string(link, static_cast<size_t>(len)))
+        if (len > 0 && target == std::string(link, static_cast<size_t>(len)))
             return fd;
     }
     return -1;
@@ -59,8 +74,7 @@ static void enableRS485Mode(const std::string& port)
     rs485.delay_rts_before_send = 0;
     rs485.delay_rts_after_send  = 0;
     if (ioctl(fd, TIOCSRS485, &rs485) < 0)
-        ROS_WARN("Could not set RS485 mode (adapter may handle it in hardware): %s",
-                 strerror(errno));
+        ROS_INFO("RS485 kernel ioctl not supported (USB adapter handles direction in hardware)");
     else
         ROS_INFO("RS485 kernel mode enabled on fd %d", fd);
 }
