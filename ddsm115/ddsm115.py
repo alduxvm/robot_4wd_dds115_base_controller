@@ -16,7 +16,7 @@ class MotorControl:
 	def __init__(self, device="/dev/ttyUSB0"):
 
 		# self.ser = serial.Serial(device, 115200)
-		self.ser = serial.rs485.RS485(device, 115200, timeout=0)
+		self.ser = serial.rs485.RS485(device, 115200, timeout=0.05)
 		self.ser.rs485_mode = serial.rs485.RS485Settings()
 		self.crc8 = crcmod.predefined.mkPredefinedCrcFun('crc-8-maxim')
 		self.str_10bytes = ">BBBBBBBBBB"
