@@ -91,8 +91,9 @@ public:
         pnh_.param<double>("wheel_track",         wheel_track_,      0.33);
         pnh_.param<double>("wheel_base",          wheel_base_,       0.33);
         pnh_.param<double>("feedback_rate_hz",    feedback_rate_hz_, 10.0);
-        pnh_.param<double>("cmd_vel_timeout",     cmd_vel_timeout_,  1.0);
-        pnh_.param<int>   ("inter_cmd_gap_ms",    inter_cmd_gap_ms_, 2);
+        pnh_.param<double>("cmd_vel_timeout",     cmd_vel_timeout_,   1.0);
+        pnh_.param<int>   ("inter_cmd_gap_ms",    inter_cmd_gap_ms_,  4);
+        pnh_.param<double>("accel_rpm_per_sec",   accel_rpm_per_sec_, 400.0);
 
         pnh_.param("wheel_ids",        wheel_ids_,        std::vector<int>{1, 2, 3, 4});
         pnh_.param("wheel_directions", wheel_directions_,
@@ -137,6 +138,10 @@ public:
         motor_currents_.fill(0.0f);
         last_cmd_time_ = ros::Time::now();
         last_odom_time_ = ros::Time::now();
+
+        // ── Init ramp state ───────────────────────────────────────────────────
+        current_cmd_rpms_.fill(0.0);
+        last_tx_time_ = std::chrono::steady_clock::now();
 
         // ── Start worker threads ──────────────────────────────────────────────
         running_ = true;
@@ -220,33 +225,47 @@ private:
     }
 
     // ── Send RPMs to all 4 motors ─────────────────────────────────────────────
-    // Pure differential drive kinematics. No threshold hacks.
+    // Pure differential drive kinematics with velocity ramping.
     void sendRpms(double linear, double angular)
     {
-        const double conv = 60.0 / (2.0 * M_PI * wheel_radius_);
+        const double conv      = 60.0 / (2.0 * M_PI * wheel_radius_);
         const double left_vel  = linear - angular * wheel_track_ / 2.0;
         const double right_vel = linear + angular * wheel_track_ / 2.0;
 
-        std::lock_guard<std::mutex> bus_lock(bus_mutex_);
-
+        // ── Compute target RPM per motor ──────────────────────────────────────
+        std::array<double, 4> target{};
         for (size_t i = 0; i < wheel_ids_.size(); i++) {
-            double vel = (wheel_directions_[i] == "backward") ? -right_vel : left_vel;
-            if (i == 1 || i == 3) {
-                // right-side motors
-                vel = (wheel_directions_[i] == "backward") ? -right_vel : right_vel;
-            }
-            auto rpm_val = static_cast<int16_t>(std::round(vel * conv));
+            double vel = (i == 1 || i == 3) ? right_vel : left_vel;
+            if (wheel_directions_[i] == "backward") vel = -vel;
+            target[i] = vel * conv;
+        }
+
+        // ── Ramp current_cmd_rpms_ toward target ──────────────────────────────
+        auto now = std::chrono::steady_clock::now();
+        double dt = std::chrono::duration<double>(now - last_tx_time_).count();
+        last_tx_time_ = now;
+        dt = std::min(dt, 0.2);  // cap to avoid big jumps after a pause
+
+        const double max_step = accel_rpm_per_sec_ * dt;
+
+        for (size_t i = 0; i < 4; i++) {
+            double diff = target[i] - current_cmd_rpms_[i];
+            if (std::abs(diff) <= max_step)
+                current_cmd_rpms_[i] = target[i];
+            else
+                current_cmd_rpms_[i] += (diff > 0.0) ? max_step : -max_step;
+        }
+
+        // ── Send to motors ────────────────────────────────────────────────────
+        std::lock_guard<std::mutex> bus_lock(bus_mutex_);
+        for (size_t i = 0; i < wheel_ids_.size(); i++) {
+            auto rpm_val = static_cast<int16_t>(std::round(current_cmd_rpms_[i]));
             auto frame   = ddsm115::buildRpmFrame(
                                static_cast<uint8_t>(wheel_ids_[i]), rpm_val);
-
             serial_.flushInput();
             serial_.write(frame.data(), frame.size());
-
-            // Wait for RS485 line to clear before next command
-            std::this_thread::sleep_for(
-                std::chrono::milliseconds(inter_cmd_gap_ms_));
+            std::this_thread::sleep_for(std::chrono::milliseconds(inter_cmd_gap_ms_));
         }
-        // Flush any accumulated replies — we don't need them here
         serial_.flushInput();
     }
 
@@ -421,6 +440,11 @@ private:
     double wheel_radius_, wheel_track_, wheel_base_;
     double feedback_rate_hz_, cmd_vel_timeout_;
     int    inter_cmd_gap_ms_;
+    double accel_rpm_per_sec_;
+
+    // Velocity ramp state (TX thread only — no mutex needed)
+    std::array<double, 4>                        current_cmd_rpms_{};
+    std::chrono::steady_clock::time_point        last_tx_time_{};
 
     // Command state
     std::mutex              cmd_mutex_;
